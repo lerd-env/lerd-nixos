@@ -1,2 +1,2 @@
 # lerd-nixos
-NixOS flake for Lerd ( https://lerd.sh/ )
+Unofficial NixOS flake for Lerd ( https://lerd.sh/ )
