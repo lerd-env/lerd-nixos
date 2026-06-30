@@ -1,6 +1,6 @@
 # lerd-nixos
 
-Unofficial NixOS flake for [Lerd](https://lerd.sh/) — a Herd-like local PHP dev
+NixOS flake for [Lerd](https://lerd.sh/) — a Herd-like local PHP dev
 environment.
 
 Lerd runs PHP-FPM, nginx, a DNS resolver, and services (MySQL, Redis, …) as
@@ -291,6 +291,6 @@ Most "failed to start" cases on a fresh install trace back to missing **linger**
 
 ---
 
-> This is an **unofficial** packaging of lerd. The DNS/cert/systemd integration
+> The DNS/cert/systemd integration
 > notes above reflect getting lerd to coexist with NixOS's declarative model;
 > they are not endorsed by upstream. Built and tested on `x86_64-linux`.
