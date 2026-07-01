@@ -1,14 +1,19 @@
 # lerd-nixos
 
-NixOS flake for [Lerd](https://lerd.sh/) — a Herd-like local PHP dev
-environment.
+> Run [Lerd](https://lerd.sh), the Herd-like local PHP dev environment,
+> declaratively on NixOS. One flake packages the binary and ships the
+> `configuration.nix` blocks the stack needs.
 
-Lerd runs PHP-FPM, nginx, a DNS resolver, and services (MySQL, Redis, …) as
-**rootless Podman containers** managed by **systemd user services** (quadlets),
-plus two helpers (`lerd-ui`, `lerd-watcher`) that run the host `lerd` binary.
-That design assumes a Debian/Ubuntu-style host, so it needs a handful of
-NixOS-specific settings to work cleanly. This README is a complete, NixOS-only
-runbook from a fresh install.
+[![Part of Lerd](https://img.shields.io/badge/part%20of-lerd-ff2d20)](https://github.com/geodro/lerd)
+[![Docs](https://img.shields.io/badge/docs-lerd.sh-blue)](https://lerd.sh/getting-started/nixos)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Lerd runs PHP-FPM, nginx, a DNS resolver, and services (MySQL, Redis, and more)
+as **rootless Podman containers** managed by **systemd user services**
+(quadlets), plus two helpers (`lerd-ui`, `lerd-watcher`) that run the host
+`lerd` binary. That design assumes a Debian/Ubuntu-style host, so it needs a
+handful of NixOS-specific settings to work cleanly. This README is a complete,
+NixOS-only runbook from a fresh install to a working Laravel site.
 
 - [Try it without installing](#try-it-without-installing)
 - [Add it to your flake](#add-it-to-your-flake)
@@ -71,7 +76,7 @@ inline, pass `lerd` through `specialArgs = { inherit lerd; };` and reference
 
 ## NixOS system configuration
 
-Add the following to `configuration.nix`. Each block is explained below — most of
+Add the following to `configuration.nix`. Each block is explained below. Most of
 it is required; a couple of items are conditional and called out as such.
 Replace `youruser` with your username throughout.
 
@@ -79,13 +84,13 @@ Replace `youruser` with your username throughout.
 { config, pkgs, ... }:
 
 {
-  # 1. Rootless Podman — lerd runs everything in containers.
+  # 1. Rootless Podman, lerd runs everything in containers.
   virtualisation.podman.enable = true;
   virtualisation.containers.enable = true;
 
   # 2. Move Podman's default subnet pool off 10.x.
   #    REQUIRED ONLY IF a route on your machine claims 10.0.0.0/8 (common with
-  #    corporate VPNs — check `ip route`). Podman's default pool lives in 10.x,
+  #    corporate VPNs, check `ip route`). Podman's default pool lives in 10.x,
   #    and an overlapping route makes network creation fail with
   #    "could not find free subnet from subnet pools". Harmless to keep even
   #    without a VPN.
@@ -101,7 +106,7 @@ Replace `youruser` with your username throughout.
   #    (otherwise systemd-logind tears them down on lock/logout).
   users.users.youruser.linger = true;
 
-  # 5. DNS for *.test — owned by NixOS, NOT by lerd (see notes below).
+  # 5. DNS for *.test, owned by NixOS, NOT by lerd (see notes below).
   #    Routes ONLY *.test to lerd's DNS container on 127.0.0.1:5300; everything
   #    else stays on your normal resolver, so a stopped lerd-dns can only ever
   #    break .test, never the whole internet.
@@ -112,8 +117,8 @@ Replace `youruser` with your username throughout.
   };
   networking.networkmanager.dns = "systemd-resolved";  # if you use NetworkManager
 
-  # 6. Trust lerd's mkcert root CA system-wide (curl, PHP, Node, …).
-  #    The file doesn't exist yet on a fresh install — add this line AFTER the
+  # 6. Trust lerd's mkcert root CA system-wide (curl, PHP, Node, and more).
+  #    The file doesn't exist yet on a fresh install, add this line AFTER the
   #    "First-time lerd setup" step below generates and copies it in.
   security.pki.certificateFiles = [ ./certs/lerd-rootCA.pem ];
 
@@ -129,7 +134,7 @@ Replace `youruser` with your username throughout.
 
   # 8. OPTIONAL host PHP + Composer (for editor tooling and `lerd new`'s
   #    initial scaffold). lerd serves your app's PHP from containers regardless
-  #    of this — pin the per-project version with `lerd isolate <ver>`.
+  #    of this, pin the per-project version with `lerd isolate <ver>`.
   environment.systemPackages = with pkgs; [ php84 php84Packages.composer ];
 }
 ```
@@ -147,11 +152,11 @@ and, if the lerd-dns container isn't up, can take down **all** name resolution
 The config above sidesteps that: **NixOS** owns the resolver and routes only
 `~test` to lerd-dns. Because that routing lives in the main `resolved.conf`
 (which lerd never edits), it's the stable anchor. The consequence is that you
-should **decline** lerd's offer to configure DNS — see the next section.
+should **decline** lerd's offer to configure DNS, see the next section.
 
 ## First-time lerd setup
 
-Do this once, in order. (You need working internet DNS first — if it's already
+Do this once, in order. (You need working internet DNS first. If it's already
 broken from an earlier attempt, see [Troubleshooting](#dns-is-completely-broken).)
 
 1. **Apply the system config** (without the cert line #6 yet, since the file
@@ -160,7 +165,7 @@ broken from an earlier attempt, see [Troubleshooting](#dns-is-completely-broken)
    sudo nixos-rebuild switch
    ```
 
-2. **Run the installer.** Use `--no-ipv6` — it keeps the lerd network IPv4-only,
+2. **Run the installer.** Use `--no-ipv6`, it keeps the lerd network IPv4-only,
    which avoids a second class of subnet-pool errors on the IPv6 dual-stack
    bridge:
    ```sh
@@ -185,7 +190,7 @@ broken from an earlier attempt, see [Troubleshooting](#dns-is-completely-broken)
    sudo nixos-rebuild switch
    ```
    (The CA cert is public and safe to commit; the matching **private key** stays
-   in `~/.local/share/mkcert/` — do not copy or commit it.)
+   in `~/.local/share/mkcert/`, do not copy or commit it.)
 
 4. **Verify** the whole stack:
    ```sh
@@ -251,7 +256,7 @@ printf 'nameserver 192.168.0.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.con
 ```
 
 The permanent fix is the NixOS DNS config (block #5) plus declining lerd's DNS
-prompt — once that's in place this shouldn't recur. The only things that
+prompt. Once that's in place this shouldn't recur. The only things that
 re-touch DNS are `lerd install`/`lerd start` (decline the prompt) and the lerd
 watcher (which only acts when `.test` is already broken).
 
@@ -274,7 +279,7 @@ systemctl --user restart lerd-ui lerd-watcher
 systemctl --user is-active lerd-ui lerd-watcher       # → active
 ```
 
-Editing the unit files instead won't survive — `lerd install` regenerates them
+Editing the unit files instead won't survive: `lerd install` regenerates them
 from embedded templates, so the symlink is the durable fix.
 
 ### A container won't start (`start lerd-… failed`)
@@ -291,6 +296,6 @@ Most "failed to start" cases on a fresh install trace back to missing **linger**
 
 ---
 
-> The DNS/cert/systemd integration
-> notes above reflect getting lerd to coexist with NixOS's declarative model;
-> they are not endorsed by upstream. Built and tested on `x86_64-linux`.
+> The DNS/cert/systemd integration notes above reflect getting lerd to coexist
+> with NixOS's declarative model; they are not endorsed by upstream. Built and
+> tested on `x86_64-linux`.
