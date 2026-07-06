@@ -1,5 +1,5 @@
 {
-  description = "Lerd - Herd-like local PHP dev environment";
+  description = "Lerd — Herd-like local PHP dev environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

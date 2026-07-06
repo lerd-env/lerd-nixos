@@ -1,16 +1,16 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.27.1";
+  version = "1.26.2";
   src = fetchFromGitHub {
-    owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-6rtmHa59oj6mfSYEoaeH72VAPsPGg1KEIz8s4bUPt54=";
+    owner = "geodro"; repo = "lerd"; rev = "v${version}";
+    hash = "sha256-BusrsUOtd39KlyzROLIKlQo64sExYcH3eA28vs3mfBM=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
   # the inlang message-format plugin listed in project.inlang/settings.json. That
   # entry is a https://cdn.jsdelivr.net URL, which the inlang SDK fetches at build
-  # time - impossible in the network-isolated Nix sandbox, leaving the dashboard's
+  # time — impossible in the network-isolated Nix sandbox, leaving the dashboard's
   # i18n messages uncompiled. Vendor the plugin and rewrite the module reference to
   # a data: URI, which the SDK's fetch() resolves offline.
   messageFormatPluginUrl = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4/dist/index.js";
