@@ -2,7 +2,7 @@ name: Update Lerd
 
 on:
   schedule:
-    # Daily at 09:00 UTC. GitHub may delay scheduled runs under load.
+    # Daily at 09:00 UTC.
     - cron: "0 9 * * *"
   workflow_dispatch: {}
 
