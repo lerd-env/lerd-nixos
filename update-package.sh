@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bump the vendored Lerd version in package.nix and refresh the fixed-output
 # derivation hashes (src, npmDepsHash, vendorHash) that go stale when it moves.
-# See UpdatePackage.md for what this does and how to do it by hand.
+# See UPDATE_PACKAGE.md for what this does and how to do it by hand.
 set -euo pipefail
 
 usage() {
