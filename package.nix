@@ -3,7 +3,7 @@
 let
   version = "1.26.2";
   src = fetchFromGitHub {
-    owner = "geodro"; repo = "lerd"; rev = "v${version}";
+    owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
     hash = "sha256-BusrsUOtd39KlyzROLIKlQo64sExYcH3eA28vs3mfBM=";
   };
 
