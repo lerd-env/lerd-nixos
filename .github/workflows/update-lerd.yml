@@ -1,0 +1,86 @@
+name: Update Lerd
+
+on:
+  schedule:
+    # Daily at 09:00 UTC.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-lerd
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict manual runs to repo admins
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          response=$(curl -sSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/collaborators/${ACTOR}/permission")
+          permission=$(echo "$response" | jq -r '.permission // "unknown"')
+          echo "actor ${ACTOR} has permission: ${permission}"
+          if [ "$permission" != "admin" ]; then
+            echo "::error::Only repo admins can manually run this workflow (${ACTOR} resolved to '${permission}')."
+            echo "API response was: $response"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check for a newer Lerd release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_tag=$(curl -sSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://api.github.com/repos/lerd-env/lerd/releases/latest \
+            | jq -r .tag_name)
+          if [ -z "$latest_tag" ] || [ "$latest_tag" = "null" ]; then
+            echo "::error::Could not resolve the latest Lerd release tag from the GitHub API."
+            exit 1
+          fi
+          latest_version="${latest_tag#v}"
+          current_version=$(sed -n -E 's/.*version = "([^"]+)".*/\1/p' package.nix | head -1)
+
+          echo "current: ${current_version}, latest: ${latest_version}"
+          if [ "$latest_version" = "$current_version" ]; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "version=${latest_version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version and refresh hashes
+        if: steps.check.outputs.updated == 'true'
+        run: ./update-package.sh "${{ steps.check.outputs.version }}"
+
+      - name: Commit and push
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.nix
+          # Guard against an empty commit (nothing to do if the file is unchanged).
+          if git diff --staged --quiet; then
+            echo "No changes staged; skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: update lerd to ${{ steps.check.outputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}"
