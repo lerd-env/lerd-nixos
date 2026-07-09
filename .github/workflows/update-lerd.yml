@@ -84,3 +84,18 @@ jobs:
           fi
           git commit -m "chore: update lerd to ${{ steps.check.outputs.version }}"
           git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Tag the release
+        if: steps.check.outputs.updated == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          # Idempotent + non-destructive: if the tag already exists on origin,
+          # leave it exactly as-is (never re-point or force-push it).
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on origin; leaving it untouched."
+            exit 0
+          fi
+          git tag "${tag}"
+          git push origin "refs/tags/${tag}"

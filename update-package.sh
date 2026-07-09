@@ -34,13 +34,15 @@ apply_hash() {
         exit 1
       fi
       local hash_line=$((rev_line + 1))
-      sed -i.bak -E "${hash_line}s/hash = \"[^\"]*\"/hash = \"${value}\"/" "$PKG_FILE"
+      # Use | as the sed delimiter: a base64 hash can contain /, which would
+      # otherwise close the s/// command early (e.g. sha256-...GzPI/A=).
+      sed -i.bak -E "${hash_line}s|hash = \"[^\"]*\"|hash = \"${value}\"|" "$PKG_FILE"
       ;;
     npmDeps)
-      sed -i.bak -E "s/npmDepsHash = \"[^\"]*\"/npmDepsHash = \"${value}\"/" "$PKG_FILE"
+      sed -i.bak -E "s|npmDepsHash = \"[^\"]*\"|npmDepsHash = \"${value}\"|" "$PKG_FILE"
       ;;
     vendor)
-      sed -i.bak -E "s/vendorHash = \"[^\"]*\"/vendorHash = \"${value}\"/" "$PKG_FILE"
+      sed -i.bak -E "s|vendorHash = \"[^\"]*\"|vendorHash = \"${value}\"|" "$PKG_FILE"
       ;;
   esac
   rm -f "$PKG_FILE.bak"
