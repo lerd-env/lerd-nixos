@@ -1,10 +1,10 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.28.0";
+  version = "1.28.1";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-cDebjGtlIaKm0S20NtRu4vYGW0HT73YjxNqPKOTw05Q=";
+    hash = "sha256-GY5nr+EweBq220pFwNCSu2Z9x3V2+GvQ8FXpgGzPI/A=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
@@ -33,7 +33,7 @@ let
 in
 buildGoModule {
   pname = "lerd"; inherit version src;
-  vendorHash = "sha256-VXKLEbZBqJMXxUcz4Dc2d2H0D1rrOdberWl0Y+W7zHM=";
+  vendorHash = "sha256-gqm4tLsPVa8fj7j9FfLdFzeh5DJgYSFDoMOBT/DwQd8=";
   subPackages = [ "cmd/lerd" ];
   tags = [ "nogui" ];
   env.CGO_ENABLED = 0;
