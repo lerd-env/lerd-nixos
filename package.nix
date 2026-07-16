@@ -1,10 +1,10 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.28.1";
+  version = "1.29.0";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-GY5nr+EweBq220pFwNCSu2Z9x3V2+GvQ8FXpgGzPI/A=";
+    hash = "sha256-FjvuJHBbDltpl75mKCMKa5eMYBi/ZNXcd/5NCBCZPYo=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
