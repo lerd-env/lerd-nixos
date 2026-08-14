@@ -151,8 +151,20 @@ and, if the lerd-dns container isn't up, can take down **all** name resolution
 
 The config above sidesteps that: **NixOS** owns the resolver and routes only
 `~test` to lerd-dns. Because that routing lives in the main `resolved.conf`
-(which lerd never edits), it's the stable anchor. The consequence is that you
-should **decline** lerd's offer to configure DNS, see the next section.
+(which lerd never edits), it's the stable anchor.
+
+Since 1.30, an unpatched lerd also writes an always-up dummy link (`lerd0`) and
+empties systemd-resolved's `FallbackDNS` in
+`/etc/systemd/resolved.conf.d/lerd-fallback.conf`. Since 1.31, `lerd install`
+runs `sudo lerd bootstrap --system` first, which installs a passwordless DNS
+sudoers rule, so `lerd start` and the watcher can apply those files without a
+prompt. Ctrl+C on the old "Configuring NetworkManager dispatcher" line no
+longer stops it. On NixOS that combination takes down **all** name resolution,
+not just `.test`.
+
+This flake patches the binary so those host-resolver writes are skipped when
+`/etc/NIXOS` exists. Non-NixOS behaviour is unchanged. You still need block #5
+so `*.test` resolves.
 
 ## First-time lerd setup
 
@@ -174,10 +186,11 @@ broken from an earlier attempt, see [Troubleshooting](#dns-is-completely-broken)
    This generates the mkcert root CA at `~/.local/share/mkcert/rootCA.pem`,
    writes the container quadlets, and starts dns/nginx/php-fpm.
 
-   > When it prints **"Configuring NetworkManager dispatcher for .test DNS
-   > resolution"** and asks for sudo, press **Ctrl+C to decline.** Your NixOS
-   > config (block #5) already resolves `.test`, so lerd doesn't need to touch
-   > DNS. Declining keeps it out of your resolver permanently.
+   The binary this flake ships skips host-resolver mutation on NixOS (it
+   detects `/etc/NIXOS`). It still starts the `lerd-dns` container; block #5
+   is what routes `*.test` to it. An unpatched 1.31+ binary will write
+   `lerd-fallback.conf` and `lerd0` without a prompt you can usefully
+   Ctrl+C — recover with the steps below, then switch to this package.
 
 3. **Trust the CA.** Copy it into your config repo and enable line #6:
    ```sh
@@ -235,11 +248,22 @@ right after a lerd command or reboot, and possibly blocking `nixos-rebuild`. Thi
 is lerd's imperative DNS setup. Recover at runtime:
 
 ```sh
-# Remove lerd's resolver hooks
-sudo rm -f /etc/systemd/resolved.conf.d/lerd.conf \
+# Take down lerd's .test link (it carries the ~test route)
+sudo systemctl disable --now lerd-dns-link.service
+sudo ip link del lerd0 2>/dev/null
+
+# Remove lerd's resolver hooks. lerd-fallback.conf matters most here: it turns
+# off systemd-resolved's fallback servers, so leaving it behind keeps you with
+# no safety net while you are trying to recover.
+sudo rm -f /etc/systemd/resolved.conf.d/lerd-fallback.conf \
+           /etc/systemd/resolved.conf.d/lerd.conf \
+           /etc/systemd/system/lerd-dns-link.service \
+           /etc/NetworkManager/conf.d/lerd-dns-link.conf \
            /etc/NetworkManager/conf.d/lerd.conf \
            /etc/NetworkManager/dnsmasq.d/lerd.conf \
-           /etc/NetworkManager/dispatcher.d/99-lerd-dns
+           /etc/NetworkManager/dispatcher.d/99-lerd-dns \
+           /etc/sudoers.d/lerd
+sudo systemctl daemon-reload
 
 # Reset and restart whichever resolver you run
 sudo resolvectl revert <iface>          # e.g. enp6s0; ignore errors if resolved is off
@@ -255,10 +279,10 @@ sudo rm -f /etc/resolv.conf
 printf 'nameserver 192.168.0.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf
 ```
 
-The permanent fix is the NixOS DNS config (block #5) plus declining lerd's DNS
-prompt. Once that's in place this shouldn't recur. The only things that
-re-touch DNS are `lerd install`/`lerd start` (decline the prompt) and the lerd
-watcher (which only acts when `.test` is already broken).
+The permanent fix is the NixOS DNS config (block #5) plus this flake's patched
+binary (or an upstream lerd that skips host resolver writes when `/etc/NIXOS`
+exists). An unpatched 1.31+ `lerd install` / `lerd start` / watcher will put
+the files back.
 
 ### "could not find ... lerd-nginx" on `lerd link`
 

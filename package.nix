@@ -1,10 +1,10 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.28.0";
+  version = "1.33.0";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-cDebjGtlIaKm0S20NtRu4vYGW0HT73YjxNqPKOTw05Q=";
+    hash = "sha256-Gz3TDeJt4MGElRS9dOB/ZPqfBxjQTBudc23ph22O7j4=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
@@ -22,7 +22,7 @@ let
   ui = buildNpmPackage {
     pname = "lerd-ui"; inherit version src;
     sourceRoot = "${src.name}/internal/ui/web";
-    npmDepsHash = "sha256-Wlrr5jxbpX7gE1zU0ZpJNXvqX3HoVZ2P+wLRdLEYTpA=";
+    npmDepsHash = "sha256-SEUCCGWMEmX9KeqJFVc/kME3l33FhENt8ZawqUJZZl0=";
     postPatch = ''
       b64=$(base64 -w0 ${messageFormatPlugin})
       substituteInPlace project.inlang/settings.json \
@@ -33,7 +33,13 @@ let
 in
 buildGoModule {
   pname = "lerd"; inherit version src;
-  vendorHash = "sha256-VXKLEbZBqJMXxUcz4Dc2d2H0D1rrOdberWl0Y+W7zHM=";
+  vendorHash = "sha256-2PnSsYgtoEq5nHqRDgafoL1vqV2iGF1J0RLM0pGjEnI=";
+  # 1.30+ writes an always-up dummy link (lerd0) and empties systemd-resolved's
+  # FallbackDNS; 1.31+ installs DNS sudoers via `lerd bootstrap --system` so
+  # later start/watcher repairs apply that without a prompt. On NixOS those
+  # files take down all name resolution. Skip host resolver mutation; NixOS
+  # already routes only ~test to lerd-dns from configuration.nix.
+  patches = [ ./patches/skip-host-resolver-on-nixos.patch ];
   subPackages = [ "cmd/lerd" ];
   tags = [ "nogui" ];
   env.CGO_ENABLED = 0;

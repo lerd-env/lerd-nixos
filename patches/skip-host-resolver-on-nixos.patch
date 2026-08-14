@@ -1,0 +1,172 @@
+diff --git a/internal/cli/bootstrap_linux.go b/internal/cli/bootstrap_linux.go
+index eb3f4f4..74738c4 100644
+--- a/internal/cli/bootstrap_linux.go
++++ b/internal/cli/bootstrap_linux.go
+@@ -41,6 +41,10 @@ func runBootstrapSystem(target string, skipSudoers bool) error {
+ 	} else {
+ 		feedback.Done("systemd linger enabled for " + target)
+ 	}
++	if dns.HostOwnsResolver() {
++		feedback.Note("NixOS owns the resolver; skipping DNS sudoers")
++		return nil
++	}
+ 	if skipSudoers {
+ 		return nil
+ 	}
+diff --git a/internal/cli/bootstrap_linux_test.go b/internal/cli/bootstrap_linux_test.go
+index 981f3ee..5d98818 100644
+--- a/internal/cli/bootstrap_linux_test.go
++++ b/internal/cli/bootstrap_linux_test.go
+@@ -5,17 +5,21 @@ package cli
+ import (
+ 	"path/filepath"
+ 	"testing"
++
++	"github.com/geodro/lerd/internal/dns"
+ )
+ 
+ // stubBootstrapSystem redirects the three root actions runBootstrapSystem
+ // performs so the test never touches /etc or the real login manager.
+ func stubBootstrapSystem(t *testing.T) (*[][]string, *[]string) {
+ 	t.Helper()
+-	origPath, origRunner, origSudoers := unprivPortDropIn, bootstrapRunner, writeDNSSudoers
++	origPath, origRunner, origSudoers, origOwns := unprivPortDropIn, bootstrapRunner, writeDNSSudoers, dns.HostOwnsResolver
+ 	t.Cleanup(func() {
+ 		unprivPortDropIn, bootstrapRunner, writeDNSSudoers = origPath, origRunner, origSudoers
++		dns.HostOwnsResolver = origOwns
+ 	})
+ 	unprivPortDropIn = filepath.Join(t.TempDir(), "99-lerd-ports.conf")
++	dns.HostOwnsResolver = func() bool { return false }
+ 
+ 	var runs [][]string
+ 	bootstrapRunner = func(name string, args ...string) error {
+@@ -60,6 +64,24 @@ func TestRunBootstrapSystemSkipsSudoers(t *testing.T) {
+ 	}
+ }
+ 
++// NixOS owns systemd-resolved from configuration.nix. Writing the DNS sudoers
++// grant there lets a later start or watcher apply lerd0 and empty FallbackDNS
++// without a prompt, which takes down all name resolution.
++func TestRunBootstrapSystemSkipsSudoersOnNixOS(t *testing.T) {
++	runs, users := stubBootstrapSystem(t)
++	dns.HostOwnsResolver = func() bool { return true }
++
++	if err := runBootstrapSystem("george", false); err != nil {
++		t.Fatalf("runBootstrapSystem: %v", err)
++	}
++	if len(*users) != 0 {
++		t.Errorf("sudoers grant written on NixOS: %v", *users)
++	}
++	if len(*runs) != 2 {
++		t.Errorf("commands = %v, want ports and linger still applied", *runs)
++	}
++}
++
+ func TestRunBootstrapSystemNoTargetUser(t *testing.T) {
+ 	runs, users := stubBootstrapSystem(t)
+ 
+diff --git a/internal/dns/setup.go b/internal/dns/setup.go
+index e43f0f2..0f550cf 100644
+--- a/internal/dns/setup.go
++++ b/internal/dns/setup.go
+@@ -427,6 +427,15 @@ func Setup() error {
+ 	return ConfigureResolver()
+ }
+ 
++// HostOwnsResolver reports whether the OS, not lerd, owns systemd-resolved.
++// NixOS generates resolved.conf from configuration.nix; writing drop-ins,
++// the lerd0 dummy link, or FallbackDNS= there takes down all name resolution.
++// A func var so tests can force the non-NixOS path without touching /etc/NIXOS.
++var HostOwnsResolver = func() bool {
++	_, err := os.Stat("/etc/NIXOS")
++	return err == nil
++}
++
+ // ConfigureResolver configures the system DNS resolver to forward .test to the
+ // lerd-dns dnsmasq container on port 5300. Call this after lerd-dns is running so
+ // that any immediate resolvectl changes don't break DNS before dnsmasq is up.
+@@ -437,6 +446,13 @@ func ConfigureResolver() error {
+ 	if cfg, err := config.LoadGlobal(); err == nil && cfg != nil && !cfg.DNS.Enabled {
+ 		return nil
+ 	}
++	// NixOS routes only ~test to lerd-dns from configuration.nix. The
++	// installer, lerd start, and the watcher would otherwise write
++	// lerd-fallback.conf (empty FallbackDNS) and lerd0, which on NixOS
++	// takes down every name, not just .test.
++	if HostOwnsResolver() {
++		return nil
++	}
+ 	if isSystemdResolvedActive() {
+ 		if isNetworkManagerActive() {
+ 			return setupNMWithResolved()
+@@ -978,6 +994,9 @@ func removeSudoersGrant() bool {
+ // grant the passwordless DNS rules up front, letting a later unattended install
+ // configure the resolver without a prompt. Idempotent.
+ func WriteSudoersForUser(user string) error {
++	if HostOwnsResolver() {
++		return nil
++	}
+ 	if err := validSudoersUser(user); err != nil {
+ 		return err
+ 	}
+@@ -1076,6 +1095,9 @@ func SudoersCurrent() bool {
+ }
+ 
+ func InstallSudoers() error {
++	if HostOwnsResolver() {
++		return nil
++	}
+ 	user := os.Getenv("USER")
+ 	if user == "" {
+ 		user = os.Getenv("LOGNAME")
+diff --git a/internal/dns/setup_test.go b/internal/dns/setup_test.go
+index 6c2d179..dea177e 100644
+--- a/internal/dns/setup_test.go
++++ b/internal/dns/setup_test.go
+@@ -844,6 +844,37 @@ func TestConfigureResolver_doesNothingWhenDNSIsDisabled(t *testing.T) {
+ 	if strings.Index(fn, "!cfg.DNS.Enabled") > strings.Index(fn, "isSystemdResolvedActive()") {
+ 		t.Error("the disabled check must come before any resolver path runs")
+ 	}
++	assertContains(t, fn, "HostOwnsResolver()")
++	if strings.Index(fn, "HostOwnsResolver()") > strings.Index(fn, "isSystemdResolvedActive()") {
++		t.Error("the NixOS host-owns-resolver check must come before any resolver path runs")
++	}
++}
++
++func TestConfigureResolver_doesNothingWhenHostOwnsResolver(t *testing.T) {
++	orig := HostOwnsResolver
++	t.Cleanup(func() { HostOwnsResolver = orig })
++	HostOwnsResolver = func() bool { return true }
++	if err := ConfigureResolver(); err != nil {
++		t.Fatalf("ConfigureResolver: %v", err)
++	}
++}
++
++func TestWriteSudoersForUser_skipsWhenHostOwnsResolver(t *testing.T) {
++	orig := HostOwnsResolver
++	t.Cleanup(func() { HostOwnsResolver = orig })
++	HostOwnsResolver = func() bool { return true }
++	if err := WriteSudoersForUser("not a valid user"); err != nil {
++		t.Fatalf("WriteSudoersForUser: %v", err)
++	}
++}
++
++func TestInstallSudoers_skipsWhenHostOwnsResolver(t *testing.T) {
++	orig := HostOwnsResolver
++	t.Cleanup(func() { HostOwnsResolver = orig })
++	HostOwnsResolver = func() bool { return true }
++	if err := InstallSudoers(); err != nil {
++		t.Fatalf("InstallSudoers: %v", err)
++	}
+ }
+ 
+ // section returns the source between two markers, failing the test if either is
+@@ -922,3 +953,8 @@ func TestLinuxSudoers_grantsEveryPrivilegedCommandTheCodeRuns(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestMain(m *testing.M) {
++	HostOwnsResolver = func() bool { return false }
++	os.Exit(m.Run())
++}

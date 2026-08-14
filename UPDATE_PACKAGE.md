@@ -4,6 +4,11 @@
 Nix fixed-output hashes (`src.hash`, `npmDepsHash`, `vendorHash`) that all go
 stale the moment the pinned version changes.
 
+`patches/skip-host-resolver-on-nixos.patch` is applied on top of that pin so
+lerd does not write systemd-resolved drop-ins, `lerd0`, or the DNS sudoers
+rule on NixOS. Rebase or refresh the patch if a version bump fails to apply
+it. Drop the patch once upstream ships the same `/etc/NIXOS` guard.
+
 ## Automatic: `.github/workflows/update-lerd.yml`
 
 A scheduled GitHub Action checks the
