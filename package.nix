@@ -1,10 +1,10 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.35.0";
+  version = "1.36.0";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-UZDwgSnAnnleop+XAdF9wSgdV95k0RiXaqF0GdZDzcA=";
+    hash = "sha256-0qoyADTJOsZjyMLq2mMGMmsqBaPATTSE05Vo/6jMiEk=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
@@ -22,7 +22,7 @@ let
   ui = buildNpmPackage {
     pname = "lerd-ui"; inherit version src;
     sourceRoot = "${src.name}/internal/ui/web";
-    npmDepsHash = "sha256-2kFy6POcB2cG2sHej8jp0/xm2aZpWlYcTjhNX3m9xdY=";
+    npmDepsHash = "sha256-0S3iE8BjW/HtYvSF/3IzaagbqckzVuAzoCzwKxyaZ+8=";
     postPatch = ''
       b64=$(base64 -w0 ${messageFormatPlugin})
       substituteInPlace project.inlang/settings.json \
