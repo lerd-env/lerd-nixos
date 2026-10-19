@@ -1,10 +1,10 @@
 { lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
 
 let
-  version = "1.36.0";
+  version = "1.37.0";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-0qoyADTJOsZjyMLq2mMGMmsqBaPATTSE05Vo/6jMiEk=";
+    hash = "sha256-kRCGBYzKfR0+ZcWrxTL6vamazOjJBqetmREySs/k6Fs=";
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
@@ -22,7 +22,7 @@ let
   ui = buildNpmPackage {
     pname = "lerd-ui"; inherit version src;
     sourceRoot = "${src.name}/internal/ui/web";
-    npmDepsHash = "sha256-0S3iE8BjW/HtYvSF/3IzaagbqckzVuAzoCzwKxyaZ+8=";
+    npmDepsHash = "sha256-61V2lKdZvIYuHH8egRYAMk7cgK4q+ZR8EZgeWPOxx8Q=";
     postPatch = ''
       b64=$(base64 -w0 ${messageFormatPlugin})
       substituteInPlace project.inlang/settings.json \
@@ -33,7 +33,7 @@ let
 in
 buildGoModule {
   pname = "lerd"; inherit version src;
-  vendorHash = "sha256-6Z/3zWR6BrPoHd2igq6NsmGtqH6Nv4xp05RM7NhVg5w=";
+  vendorHash = "sha256-KD8M7nH1f+fi4wTHNclSKFdFUQj5ARAtf/FpssNandk=";
   subPackages = [ "cmd/lerd" ];
   tags = [ "nogui" ];
   env.CGO_ENABLED = 0;
