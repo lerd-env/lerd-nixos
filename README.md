@@ -81,8 +81,22 @@ it is required; a couple of items are conditional and called out as such.
 Replace `youruser` with your username throughout.
 
 ```nix
-{ config, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
+let
+  # See block 9. Store paths, so the user unit does not need a login PATH.
+  waitForDefaultRoute = pkgs.writeShellScript "wait-for-default-route" ''
+    set -eu
+    ip=${pkgs.iproute2}/bin/ip
+    grep=${pkgs.gnugrep}/bin/grep
+    sleep=${pkgs.coreutils}/bin/sleep
+
+    until "$ip" -o route show default | "$grep" -q . \
+       || "$ip" -o -6 route show default | "$grep" -q .; do
+      "$sleep" 0.5
+    done
+  '';
+in
 {
   # 1. Rootless Podman, lerd runs everything in containers.
   virtualisation.podman.enable = true;
@@ -132,10 +146,50 @@ Replace `youruser` with your username throughout.
     "L %h/.local/bin/lerd - - - - /run/current-system/sw/bin/lerd"
   ];
 
-  # 8. OPTIONAL host PHP + Composer (for editor tooling and `lerd new`'s
-  #    initial scaffold). lerd serves your app's PHP from containers regardless
-  #    of this, pin the per-project version with `lerd isolate <ver>`.
-  environment.systemPackages = with pkgs; [ php84 php84Packages.composer ];
+  # 8. Host tools. PHP and Composer are optional (editor tooling and
+  #    `lerd new`'s scaffold); lerd serves your app's PHP from containers
+  #    regardless, pin the per-project version with `lerd isolate <ver>`.
+  #    nssTools provides certutil, which mkcert uses to install the CA into
+  #    Firefox and Chromium. The system store in block 6 does not cover them.
+  environment.systemPackages = with pkgs; [
+    nssTools
+    php84
+    php84Packages.composer
+  ];
+
+  # 9. Wait for a real default route before rootless containers start.
+  #    Every rootless quadlet is ordered after
+  #    podman-user-wait-network-online.service, whose stock command only
+  #    polls network-online.target. On NixOS that target is reached by
+  #    NetworkManager-wait-online (`nm-online -s`), which returns when
+  #    NetworkManager has finished starting. On Wi-Fi that is often before
+  #    a default route exists. Pasta then builds the rootless netns with no
+  #    gateway and keeps it until the last container using it stops, so
+  #    containers fail DNS (`getaddrinfo ... Try again`) until
+  #    `lerd stop && lerd start`. A host that already has a route passes
+  #    immediately. The unit's own 90s timeout still applies, so an offline
+  #    boot is not held forever.
+  #    https://github.com/containers/podman/issues/27976
+  systemd.user.services.podman-user-wait-network-online = {
+    overrideStrategy = "asDropin";
+    serviceConfig.ExecStart = lib.mkForce [ "" waitForDefaultRoute ];
+  };
+
+  # 10. lerd 1.37 writes this into every PHP-FPM quadlet:
+  #       ExecStartPre=/bin/mkdir -p -m 0700 %t/lerd/env
+  #     NixOS's /bin contains only sh, so systemd reports
+  #     "Unable to locate executable '/bin/mkdir'" (203/EXEC) and lerd
+  #     reports "PHP x.y FPM quadlet: start lerd-phpXX-fpm failed". FPM
+  #     never starts. /bin is a real directory; activation re-applies the
+  #     symlink on every switch, after the script that creates /bin/sh.
+  #     Drop this once lerd stops hardcoding /bin/mkdir
+  #     (internal/podman/provided_env.go).
+  system.activationScripts.lerd-bin-mkdir = {
+    deps = [ "binsh" ];
+    text = ''
+      ln -sfn ${pkgs.coreutils}/bin/mkdir /bin/mkdir
+    '';
+  };
 }
 ```
 
@@ -200,10 +254,13 @@ broken from an earlier attempt, see [Troubleshooting](#dns-is-completely-broken)
    systemctl --user is-active lerd-ui lerd-watcher  # → active (thanks to block #7)
    ```
 
-Firefox/Chromium use their own certificate stores. Many pick up the mkcert CA
-automatically; if a browser still warns, set `security.enterprise_roots.enabled`
-to `true` in `about:config` (it then reads the system store), or import
-`certs/lerd-rootCA.pem` under Settings → Certificates → Authorities.
+Firefox and Chromium keep their own certificate databases. mkcert updates
+those with `certutil` from `nssTools` (block #8). Without that package the
+install leaves the browsers untrusting, even when curl accepts the system
+store from block #6. If a browser still warns, set
+`security.enterprise_roots.enabled` to `true` in `about:config` (Chromium then
+reads the system store), or import `certs/lerd-rootCA.pem` under
+Settings → Certificates → Authorities.
 
 ## Create a Laravel project
 
@@ -292,7 +349,48 @@ journalctl --user -xeu lerd-<name>.service --no-pager -n 50
 ```
 
 Most "failed to start" cases on a fresh install trace back to missing **linger**
-(block #4) or the **unprivileged port** sysctl (block #3).
+(block #4), the **unprivileged port** sysctl (block #3), a missing `/bin/mkdir`
+on a PHP-FPM quadlet (block #10), or containers that started before the host
+had a default route (block #9).
+
+### PHP-FPM fails with `Unable to locate executable '/bin/mkdir'`
+
+`lerd 1.37` puts `ExecStartPre=/bin/mkdir …` on every PHP-FPM quadlet. NixOS
+does not ship `/bin/mkdir`, so the unit dies with status 203/EXEC and lerd
+reports `PHP x.y FPM quadlet: start lerd-phpXX-fpm failed`. Block #10 is the
+fix. After rebuilding:
+
+```sh
+systemctl --user reset-failed 'lerd-php*-fpm.service'
+lerd start
+```
+
+### Containers cannot resolve names after boot
+
+Symptom: sites and `lerd` commands fail with `getaddrinfo … Try again` until
+`lerd stop && lerd start` (or a reboot that happens to win the race). Rootless
+Podman built its netns while NetworkManager was up but no default route
+existed yet, and it keeps that netns until the last container stops. Block #9
+makes `podman-user-wait-network-online.service` wait for a route. It passes
+immediately when a route is already there.
+
+### `lerd lan:share` works on this machine and times out from another
+
+NixOS drops inbound connections the firewall does not allow. `lerd lan:share`
+listens on port 9100 for the first shared site, then 9101, and so on. The
+proxy runs on the host, so the site loads locally either way.
+
+```nix
+networking.firewall.allowedTCPPortRanges = [
+  { from = 9100; to = 9199; }
+];
+```
+
+`lerd lan:expose` publishes nginx on 80 and 443 instead; allow those TCP
+ports the same way when you use it. The [remote development](https://lerd.sh/usage/remote-development)
+page lists the remaining ports (DNS 5300, dashboard 7073) for ufw and
+firewalld. On NixOS those are `networking.firewall.allowedTCPPorts` and
+`allowedUDPPorts`. Leave the range closed when you are not sharing.
 
 ---
 
