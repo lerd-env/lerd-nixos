@@ -17,6 +17,7 @@ NixOS-only runbook from a fresh install to a working Laravel site.
 
 - [Try it without installing](#try-it-without-installing)
 - [Add it to your flake](#add-it-to-your-flake)
+- [Beta builds](#beta-builds)
 - [NixOS system configuration](#nixos-system-configuration) ← the important part
 - [First-time lerd setup](#first-time-lerd-setup)
 - [Create a Laravel project](#create-a-laravel-project)
@@ -30,8 +31,10 @@ nix run github:lerd-env/lerd-nixos -- --help
 
 ## Add it to your flake
 
-The flake exposes a package (`packages.x86_64-linux.lerd`, also `default`) and an
-overlay (`overlays.default`).
+The flake exposes two packages, `packages.x86_64-linux.lerd` (also `default`,
+the stable release) and `packages.x86_64-linux.lerd-beta`, and an overlay
+(`overlays.default`) that adds `pkgs.lerd` and `pkgs.lerd-beta`. Stable is what
+the rest of this guide installs. [Beta builds](#beta-builds) is the opt-in.
 
 ### 1. Add the input
 
@@ -73,6 +76,42 @@ inline, pass `lerd` through `specialArgs = { inherit lerd; };` and reference
   environment.systemPackages = [ pkgs.lerd ];
 }
 ```
+
+## Beta builds
+
+Lerd publishes betas as GitHub prereleases. Opt in with the `lerd-beta`
+package. `default` stays on the latest stable release, and `lerd-beta` follows
+whichever of the two is newer, the same rule as `lerd update --beta` on a
+script install: a prerelease ahead of stable is what you get, and the stable
+release that overtakes that line replaces it.
+
+```nix
+{ environment.systemPackages = [ lerd.packages.x86_64-linux.lerd-beta ]; }
+```
+
+With the overlay, that package is `pkgs.lerd-beta`. From a module that received
+`lerd` through `specialArgs`, use `lerd.packages.${pkgs.system}.lerd-beta`.
+Both packages install a binary named `lerd`, so `environment.systemPackages`
+should list one of them.
+
+Pick up a newer pin the same way as any other flake input, then rebuild:
+
+```sh
+nix flake update lerd
+sudo nixos-rebuild switch
+```
+
+Returning to the stable package is selecting `default` (or `pkgs.lerd`) and
+rebuilding. To try the beta binary without installing it:
+
+```sh
+nix run github:lerd-env/lerd-nixos#lerd-beta -- --version
+```
+
+On a script install, `lerd update --beta` and `lerd update:beta on` opt in by
+replacing `~/.local/bin/lerd`. On NixOS that path is the symlink from block #7
+below, pointing at the Nix profile, so the package attribute is the switch.
+The rebuild above is what changes the binary.
 
 ## NixOS system configuration
 

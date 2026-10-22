@@ -1,10 +1,16 @@
-{ lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl }:
+{ lib, buildGoModule, buildNpmPackage, fetchFromGitHub, fetchurl
+  # Stable pin. ./update-package.sh rewrites these four defaults in place.
+  # The beta channel passes the same names from beta.nix.
+, version ? "1.37.1"
+, srcHash ? "sha256-rAirea77gOZgAzrLsrOCsFaMJrFl7apNUkVcX7xceR0="
+, npmDepsHash ? "sha256-61V2lKdZvIYuHH8egRYAMk7cgK4q+ZR8EZgeWPOxx8Q="
+, vendorHash ? "sha256-KD8M7nH1f+fi4wTHNclSKFdFUQj5ARAtf/FpssNandk="
+}:
 
 let
-  version = "1.37.1";
   src = fetchFromGitHub {
     owner = "lerd-env"; repo = "lerd"; rev = "v${version}";
-    hash = "sha256-rAirea77gOZgAzrLsrOCsFaMJrFl7apNUkVcX7xceR0=";
+    hash = srcHash;
   };
 
   # The UI's `paraglide-js compile` step (run as part of `npm run build`) loads
@@ -22,7 +28,7 @@ let
   ui = buildNpmPackage {
     pname = "lerd-ui"; inherit version src;
     sourceRoot = "${src.name}/internal/ui/web";
-    npmDepsHash = "sha256-61V2lKdZvIYuHH8egRYAMk7cgK4q+ZR8EZgeWPOxx8Q=";
+    inherit npmDepsHash;
     postPatch = ''
       b64=$(base64 -w0 ${messageFormatPlugin})
       substituteInPlace project.inlang/settings.json \
@@ -33,7 +39,7 @@ let
 in
 buildGoModule {
   pname = "lerd"; inherit version src;
-  vendorHash = "sha256-KD8M7nH1f+fi4wTHNclSKFdFUQj5ARAtf/FpssNandk=";
+  inherit vendorHash;
   subPackages = [ "cmd/lerd" ];
   tags = [ "nogui" ];
   env.CGO_ENABLED = 0;

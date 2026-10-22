@@ -1,0 +1,134 @@
+name: Update Lerd beta
+
+on:
+  schedule:
+    # Daily at 09:30 UTC, after update-lerd.yml at 09:00. The beta channel
+    # follows the newer of stable and the latest prerelease, so a stable
+    # release that landed at 09:00 is visible to this run.
+    - cron: "30 9 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-lerd-beta
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict manual runs to repo admins
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          response=$(curl -sSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/collaborators/${ACTOR}/permission")
+          permission=$(echo "$response" | jq -r '.permission // "unknown"')
+          echo "actor ${ACTOR} has permission: ${permission}"
+          if [ "$permission" != "admin" ]; then
+            echo "::error::Only repo admins can manually run this workflow (${ACTOR} resolved to '${permission}')."
+            echo "API response was: $response"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          # A full history so the bump can rebase if the stable workflow pushed
+          # while this one was building.
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check for a newer beta or stable release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json")
+
+          stable_tag=$(curl -sSL "${auth[@]}" \
+            https://api.github.com/repos/lerd-env/lerd/releases/latest \
+            | jq -r '.tag_name // empty')
+          if [ -z "$stable_tag" ]; then
+            echo "::error::Could not resolve the latest stable Lerd release tag."
+            exit 1
+          fi
+
+          releases=$(curl -sSL "${auth[@]}" \
+            "https://api.github.com/repos/lerd-env/lerd/releases?per_page=100")
+          if ! printf '%s' "$releases" | jq -e 'type == "array"' >/dev/null; then
+            echo "::error::GitHub releases API did not return a list."
+            echo "$releases"
+            exit 1
+          fi
+
+          # Prereleases only. The stable tag is passed separately so a release
+          # older than the newest 100 still loses to whatever /releases/latest
+          # says, and a prerelease newer than stable still wins.
+          pre_list=$(printf '%s' "$releases" | jq -r '.[] | select(.prerelease == true and .draft == false) | .tag_name')
+          pre_tags=()
+          if [ -n "$pre_list" ]; then
+            mapfile -t pre_tags <<< "$pre_list"
+          fi
+          chosen=$(python3 scripts/newest-lerd-version.py "$stable_tag" "${pre_tags[@]}")
+          current_version=$(sed -n -E 's/.*version[[:space:]]*[=?][[:space:]]*"([^"]+)".*/\1/p' beta.nix | head -1)
+
+          echo "beta pin: ${current_version}, channel: ${chosen} (stable ${stable_tag#v})"
+          if [ -z "$chosen" ]; then
+            echo "::error::Could not choose a beta-channel version."
+            exit 1
+          fi
+          if [ "$chosen" = "$current_version" ]; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "version=${chosen}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version and refresh hashes
+        if: steps.check.outputs.updated == 'true'
+        run: ./update-package.sh "${{ steps.check.outputs.version }}" beta.nix lerd-beta
+
+      - name: Commit and push
+        if: steps.check.outputs.updated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add beta.nix
+          if git diff --staged --quiet; then
+            echo "No changes staged; skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: update lerd beta to ${{ steps.check.outputs.version }}"
+          # checkout leaves a detached HEAD, so rebase onto the branch tip
+          # explicitly. A stable bump that landed during the build replays
+          # cleanly: this commit only touches beta.nix.
+          git fetch origin "${{ github.ref_name }}"
+          git rebase "origin/${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Tag the release
+        if: steps.check.outputs.updated == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          # Idempotent + non-destructive: a stable bump may already own this
+          # tag once the beta channel has followed it back to stable.
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on origin; leaving it untouched."
+            exit 0
+          fi
+          git tag "${tag}"
+          git push origin "refs/tags/${tag}"

@@ -10,11 +10,13 @@
     in {
       packages = forAll (pkgs: rec {
         lerd = pkgs.callPackage ./package.nix { };
+        lerd-beta = pkgs.callPackage ./package.nix (import ./beta.nix);
         default = lerd;
       });
 
       overlays.default = final: prev: {
         lerd = final.callPackage ./package.nix { };
+        lerd-beta = final.callPackage ./package.nix (import ./beta.nix);
       };
     };
 }

@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
           latest_version="${latest_tag#v}"
-          current_version=$(sed -n -E 's/.*version = "([^"]+)".*/\1/p' package.nix | head -1)
+          current_version=$(sed -n -E 's/.*version[[:space:]]*[=?][[:space:]]*"([^"]+)".*/\1/p' package.nix | head -1)
 
           echo "current: ${current_version}, latest: ${latest_version}"
           if [ "$latest_version" = "$current_version" ]; then
