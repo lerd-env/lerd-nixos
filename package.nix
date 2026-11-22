@@ -13,10 +13,12 @@ let
   # time — impossible in the network-isolated Nix sandbox, leaving the dashboard's
   # i18n messages uncompiled. Vendor the plugin and rewrite the module reference to
   # its vendored path.
+  # Fetch an exact release: jsDelivr's @4 tag moves with every 4.x, which
+  # breaks the fixed hash.
   messageFormatPluginUrl = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4/dist/index.js";
   messageFormatPlugin = fetchurl {
-    url = messageFormatPluginUrl;
-    hash = "sha256-lIZViAHAjrsBgiPFHCBEtsPCP8KowOeJSleIKzT+tso=";
+    url = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4.6.0/dist/index.js";
+    hash = "sha256-4HWYlGjFzgggrAAwBEpkWjyXmYc0ixZXuK9tcWtq1wQ=";
   };
 
   ui = buildNpmPackage {
