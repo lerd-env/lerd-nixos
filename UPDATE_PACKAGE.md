@@ -76,7 +76,9 @@ it over the network during `paraglide-js compile`, which the Nix sandbox
 blocks. This is pinned independently of the Lerd version and only needs
 updating if upstream bumps the `@inlang/plugin-message-format` major version
 in `project.inlang/settings.json` (i.e. the `@4` in
-`messageFormatPluginUrl` changes). If a Lerd update ever fails inside the UI
-build step with a fetch error, check that file first - bump the URL's
-version and refetch with `nix store prefetch-file <url>` (or the same
-empty-hash trick) to get the new `hash`.
+`messageFormatPluginUrl` changes). The fetch itself uses an exact version
+(`@4.6.0`), because jsDelivr's `@4` tag follows every 4.x release and a moved
+file no longer matches the fixed `hash`. If a Lerd update ever fails inside the
+UI build step with a fetch error or a hash mismatch, check that file first -
+bump the pinned version and refetch with `nix store prefetch-file <url>` (or
+the same empty-hash trick) to get the new `hash`.

@@ -12,11 +12,13 @@ let
   # entry is a https://cdn.jsdelivr.net URL, which the inlang SDK fetches at build
   # time — impossible in the network-isolated Nix sandbox, leaving the dashboard's
   # i18n messages uncompiled. Vendor the plugin and rewrite the module reference to
-  # a data: URI, which the SDK's fetch() resolves offline.
+  # its vendored path.
+  # Fetch an exact release: jsDelivr's @4 tag moves with every 4.x, which
+  # breaks the fixed hash.
   messageFormatPluginUrl = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4/dist/index.js";
   messageFormatPlugin = fetchurl {
-    url = messageFormatPluginUrl;
-    hash = "sha256-lIZViAHAjrsBgiPFHCBEtsPCP8KowOeJSleIKzT+tso=";
+    url = "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4.6.0/dist/index.js";
+    hash = "sha256-4HWYlGjFzgggrAAwBEpkWjyXmYc0ixZXuK9tcWtq1wQ=";
   };
 
   ui = buildNpmPackage {
@@ -24,9 +26,13 @@ let
     sourceRoot = "${src.name}/internal/ui/web";
     npmDepsHash = "sha256-em4eucUq4YKefBuNOtP2Eki5G7VR9G0YFcRZP/cxjjM=";
     postPatch = ''
-      b64=$(base64 -w0 ${messageFormatPlugin})
+      cp ${messageFormatPlugin} plugin-message-format.js
       substituteInPlace project.inlang/settings.json \
-        --replace-fail "${messageFormatPluginUrl}" "data:text/javascript;base64,$b64"
+        --replace-fail "${messageFormatPluginUrl}" "./plugin-message-format.js"
+    '';
+    postBuild = ''
+      grep -rq common_save src/paraglide \
+        || { echo "paraglide produced no messages"; exit 1; }
     '';
     installPhase = "runHook preInstall; cp -r dist $out; runHook postInstall";
   };
